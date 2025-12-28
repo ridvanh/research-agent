@@ -1,14 +1,13 @@
 import streamlit as st
 from research_agent import search_arxiv_papers, summarize_paper
-from slide_generator import generate_slide_deck
-import os
+from slide_generator import generate_slides
 
 st.set_page_config(page_title="Auto-Research Agent", layout="centered")
 
 st.title("Auto-Research Agent")
 st.write("Enter a research topic, and I'll fetch recent papers, summarize them, and generate a slide deck")
 
-topic = st.text_input("Research Topic", value="transformer architecture")
+topic = st.text_input("Research Topic")
 generate_btn = st.button("Generate Slide Deck")
 
 if generate_btn and topic:
@@ -18,7 +17,7 @@ if generate_btn and topic:
         for paper in papers:
             paper["summary"] = summarize_paper(paper)
 
-        file_path = generate_slide_deck(topic, papers)
+        pptx_bytes = generate_slides(papers)
 
     st.success("Slide deck generated!")
 
@@ -30,10 +29,10 @@ if generate_btn and topic:
             st.markdown(f"[PDF Link]({paper['pdf_url']})")
             st.text_area("Summary", paper['summary'], height=200)
 
-    with open(file_path, "rb") as f:
-        st.download_button(
-            label="Download Slides",
-            data=f,
-            file_name="research_slides.pptx",
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
+    st.download_button(
+        label="Download Slides",
+        data=pptx_bytes,
+        file_name="research_slides.pptx",
+        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+

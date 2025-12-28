@@ -1,112 +1,73 @@
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-import textwrap
-import os
-import time
-import http.client
+from io import BytesIO
+from pptx import Presentation
+from pptx.util import Pt
+from pptx.enum.text import MSO_AUTO_SIZE
 
-SCOPES = ['https://www.googleapis.com/auth/presentations', 'https://www.googleapis.com/auth/drive']
 MAX_CHARS_PER_SLIDE = 800
-
-def safe_execute(request_fn, retries=3, delay=2):
-    for i in range(retries):
-        try:
-            return request_fn()
-        except http.client.IncompleteRead as e:
-            print(f"IncompleteRead: retrying ({i+1}/{retries})...")
-            time.sleep(delay)
-    raise RuntimeError("Failed after retries due to IncompleteRead")
-
-def auth_google():
-    creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    else:
-        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-        creds = flow.run_local_server(port=0)
-        with open('token,json', 'w') as token:
-            token.write(creds.to_json())
-
-    return creds
-
-def create_presentation(service, title="AI Research Summary"):
-    presentation = service.presentations().create(body={"title": title}).execute()
-    return presentation
 
 def split_text_into_chunks(text, max_chars=MAX_CHARS_PER_SLIDE):
     words = text.split()
-    chunks = []
-    chunk = ""
+    chunks, chunk = [], ""
 
-    for word in words:
-        if len(chunk) + len(word) + 1 <= max_chars:
-            chunk += (" " if chunk else "") + word
+    for w in words:
+        if len(chunk) + len(w) + 1 <= max_chars:
+            chunk += (" " if chunk else "") + w
         else:
             chunks.append(chunk)
-            chunk = word
-
+            chunk = w
     if chunk:
         chunks.append(chunk)
 
     return chunks
 
-def create_slide(service, presentation_id, title, content):
-    requests = [
-        {
-            "createSlide": {
-                "slideLayoutReference": {
-                    "predefinedLayout": "TITLE_AND_BODY"
-                }
-            }
-        },
-        {
-            "insertText": {
-                "objectId": "title",
-                "text": title
-            }
-        },
-        {
-            "insertText": {
-                "objectId": "body",
-                "text": content
-            }
-        }
-    ]
-    safe_execute(lambda: service.presentations().batchUpdate(
-        presentationId = presentation_id,
-        body={"requests": requests}
-    ).execute())
+def format_summary_to_bullets(summary, max_bullets=6):
+    sentences = [s.strip() for s in summary.replace("\n", " ").split(".") if len(s.strip()) > 30]
+    bullets = sentences[:max_bullets]
+    return bullets
 
-def generate_slides(papers):
-    creds = auth_google()
-    service = build('slides', 'v1', credentials=creds)
+def generate_slides(papers, filename="AI_Research_Summary.pptx"):
+    prs = Presentation()
 
-    pres_id = create_presentation(service)
+    title_slide_layout = prs.slide_layouts[1]  # Title + Content
 
     for paper in papers:
-        title = paper['title']
-        base_info = (f"Authors: {', '.join(paper['authors'])}\n"
-                     f"Published: {paper['published']}\nPDF: {paper['pdf_url']}\n\n")
-        summary = paper['summary']
-        full_text = base_info + summary
+        title = paper["title"]
 
+        base_info = (
+            f"Authors: {', '.join(paper['authors'])}\n"
+            f"Published: {paper['published']}\n"
+            f"PDF: {paper['pdf_url']}\n\n"
+        )
 
+        full_text = base_info + paper["summary"]
         chunks = split_text_into_chunks(full_text)
+
         for chunk in chunks:
-            create_slide(service, pres_id, title, chunk)
+            slide = prs.slides.add_slide(title_slide_layout)
+            slide.shapes.title.text = title
 
-    print(f"Slides created: https://docs.google.com/presentation/d/{pres_id}")
+            tf = slide.placeholders[1].text_frame
+            tf.clear()
 
-# Example input
-papers = [{
-    'title': 'Exploring Mistral Models in Local AI Agents',
-    'authors': ['Jane Doe', 'John Smith'],
-    'published': '2025-07-12',
-    'pdf_url': 'https://arxiv.org/pdf/1234.56789.pdf',
-    'summary': 'This paper investigates the effectiveness of Mistral models deployed in local AI agents...'
-}]
+            tf.word_wrap = True
+            tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
 
-generate_slides(papers)
+            bullets = format_summary_to_bullets(chunk)
 
+            for i, bullet in enumerate(bullets):
+                if i == 0:
+                    p = tf.paragraphs[0]
+                    p.text = bullet
+                else:
+                    p = tf.add_paragraph()
+                    p.text = bullet
+                    p.level = 1
 
+                p.font.size = Pt(20)
+                p.font.bold = False
+
+    buffer = BytesIO()
+    prs.save(buffer)
+    buffer.seek(0)
+
+    return buffer

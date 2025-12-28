@@ -1,27 +1,24 @@
 import arxiv
-import os
 from langchain.chat_models import ChatOllama
 from langchain.schema import HumanMessage
 
-
-
-def search_arxiv_papers(query: str, max_results: int = 3):
+def search_arxiv_papers(topic: str, max_results: int = 5):
     search = arxiv.Search(
-        query=query,
+        query=f'ti:"{topic}" OR abs:"{topic}" OR cat:cs.LG OR cat:cs.AI',
         max_results=max_results,
-        sort_by=arxiv.SortCriterion.SubmittedDate,
         sort_order=arxiv.SortOrder.Descending
     )
 
     papers = []
     for result in search.results():
-        papers.append({
-            "title": result.title,
-            "summary": result.summary,
-            "authors": [author.name for author in result.authors],
-            "pdf_url": result.pdf_url,
-            "published": result.published.strftime("%Y-%m-%d")
-        })
+        if (topic.lower() in result.title.lower()) or ("survey" in result.title.lower() or "review" in result.title.lower()):
+            papers.append({
+                "title": result.title,
+                "summary": result.summary,
+                "authors": [author.name for author in result.authors],
+                "pdf_url": result.pdf_url,
+                "published": result.published.strftime("%Y-%m-%d")
+            })
 
     return papers
 
